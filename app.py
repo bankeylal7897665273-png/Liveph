@@ -97,20 +97,32 @@ run_keyboard = {
 @app.route('/site/<domain_name>', defaults={'filename': 'index'})
 @app.route('/site/<domain_name>/<path:filename>')
 def serve_user_site(domain_name, filename):
-    if "." not in filename:
-        site_meta = firebase_get(f"Hostingbots_s/meta_domains/{domain_name}")
-        if site_meta:
-            ext = ".py" if site_meta.get("type") == "PYTHON" else ".html"
-            filename += ext
-        else:
-            return "⚠️ Domain Not Found!", 404
-
-    file_content = firebase_get(f"Hostingbots_s/hosted_sites/{domain_name}/files/{filename.replace('.', '_')}")
-    if not file_content:
-        return f"⚠️ File '{filename}' nahi mili.", 404
-
     site_meta = firebase_get(f"Hostingbots_s/meta_domains/{domain_name}")
-    site_type = site_meta.get("type") if site_meta else "HTML"
+    if not site_meta:
+        return "⚠️ Domain Not Found!", 404
+
+    site_type = site_meta.get("type", "HTML")
+    
+    if "." not in filename:
+        ext = ".py" if site_type == "PYTHON" else ".html"
+        filename += ext
+
+    db_filename = filename.replace('.', '_')
+    file_content = firebase_get(f"Hostingbots_s/hosted_sites/{domain_name}/files/{db_filename}")
+    
+    # 🔥 FIX: Agar user ne index.py upload nahi ki hai, toh jo file upload ki hai use auto-detect karo
+    if not file_content and filename.startswith("index"):
+        all_files = firebase_get(f"Hostingbots_s/hosted_sites/{domain_name}/files")
+        if all_files:
+            target_ext = "_py" if site_type == "PYTHON" else "_html"
+            for f_name, f_content in all_files.items():
+                if f_name.endswith(target_ext):
+                    filename = f_name.replace('_', '.')
+                    file_content = f_content
+                    break
+
+    if not file_content:
+        return f"⚠️ File '{filename}' nahi mili. Aapne jo file upload ki thi, URL mein uska naam dalein (jaise: /site/{domain_name}/aapki_file.py)", 404
 
     if site_type == "PYTHON" and filename.endswith(".py"):
         old_stdout = sys.stdout
@@ -159,7 +171,7 @@ def telegram_webhook():
             msg += f"<b>Total Files:</b> {len(files)}\n"
             msg += f"<b>Files:</b>\n{file_list}\n\n"
             msg += "👉 <i>Delete:</i> <code>filename.ext/delete</code>\n"
-            msg += "👉 <i>Add/Edit:</i> <code>filename/add</code> (Ya sidha file bhein)"
+            msg += "👉 <i>Add/Edit:</i> <code>filename/add</code> (Ya sidha file bhejein)"
             send_message(chat_id, msg, run_keyboard)
 
         elif data.startswith("logs_"):
@@ -212,7 +224,7 @@ def telegram_webhook():
         firebase_set(f"Hostingbots_s/{chat_id}/state", "uploading_python")
         firebase_set(f"Hostingbots_s/{chat_id}/hosting_type", "PYTHON")
         firebase_set(f"Hostingbots_s/{chat_id}/temp_files", {})
-        send_message(chat_id, "🐍 <b>PYTHON HOSTING SELECTED</b>\n\n📂 Apni Python (.py) aur config files bhein.", upload_keyboard)
+        send_message(chat_id, "🐍 <b>PYTHON HOSTING SELECTED</b>\n\n📂 Apni Python (.py) aur config files bhejein.", upload_keyboard)
         return "OK", 200
 
     if "TOTAL LIST" in text:
@@ -253,7 +265,7 @@ def telegram_webhook():
 
         code_content = download_tg_file(document.get("file_id"))
         firebase_set(f"Hostingbots_s/{chat_id}/temp_files/{f_name.replace('.', '_')}", code_content)
-        send_message(chat_id, f"⚡ Received: <b>{f_name}</b>\nAur files bhein ya 'SUBMIT FILES' par click karein.")
+        send_message(chat_id, f"⚡ Received: <b>{f_name}</b>\nAur files bhejein ya 'SUBMIT FILES' par click karein.")
         return "OK", 200
 
     if "SUBMIT FILES" in text and user_state in ["uploading_html", "uploading_python"]:
