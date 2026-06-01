@@ -64,17 +64,30 @@ def download_tg_file(file_id):
         pass
     return ""
 
-# Keyboards
+# ==========================================
+# KEYBOARDS WITH EMOJIS & BACK BUTTONS
+# ==========================================
 main_keyboard = {
     "keyboard": [
-        [{"text": "HOSTING HTML"}, {"text": "HOSTING PYTHON"}],
-        [{"text": "TOTAL LIST"}]
+        [{"text": "🌐 HOSTING HTML"}, {"text": "🐍 HOSTING PYTHON"}],
+        [{"text": "📊 TOTAL LIST"}]
+    ],
+    "resize_keyboard": True
+}
+
+upload_keyboard = {
+    "keyboard": [
+        [{"text": "📤 SUBMIT FILES"}],
+        [{"text": "🔙 BACK"}]
     ],
     "resize_keyboard": True
 }
 
 run_keyboard = {
-    "keyboard": [[{"text": "RUN"}]],
+    "keyboard": [
+        [{"text": "🚀 RUN"}],
+        [{"text": "🔙 BACK"}]
+    ],
     "resize_keyboard": True
 }
 
@@ -167,6 +180,14 @@ def telegram_webhook():
     user_state = firebase_get(f"Hostingbots_s/{chat_id}/state") or "idle"
     user_type = firebase_get(f"Hostingbots_s/{chat_id}/hosting_type") or "HTML"
 
+    # Universal BACK Button Handler
+    if "BACK" in text or "back" in text.lower() or "🔙" in text:
+        firebase_set(f"Hostingbots_s/{chat_id}/state", "idle")
+        firebase_delete(f"Hostingbots_s/{chat_id}/temp_files")
+        msg = "🌟 <b>WELCOME TO FAST B2K  HOSTING BOT</b> 🌟\n\nKripya niche diye gaye keyboard se option select karein:"
+        send_message(chat_id, msg, main_keyboard)
+        return "OK", 200
+
     if text == "/start":
         firebase_set(f"Hostingbots_s/{chat_id}/state", "idle")
         firebase_delete(f"Hostingbots_s/{chat_id}/temp_files")
@@ -174,29 +195,27 @@ def telegram_webhook():
         send_message(chat_id, msg, main_keyboard)
         return "OK", 200
 
-    if text in ["RUN", "Run", "run"]:
+    if "RUN" in text or "run" in text.lower():
         firebase_set(f"Hostingbots_s/{chat_id}/state", "idle")
         send_message(chat_id, "🚀 <b>All Changes Executed & Live!</b> Panel ready.", main_keyboard)
         return "OK", 200
 
     # Panel Navigation
-    if text == "HOSTING HTML":
+    if "HOSTING HTML" in text:
         firebase_set(f"Hostingbots_s/{chat_id}/state", "uploading_html")
         firebase_set(f"Hostingbots_s/{chat_id}/hosting_type", "HTML")
         firebase_set(f"Hostingbots_s/{chat_id}/temp_files", {})
-        kb = {"keyboard": [[{"text": "SUBMIT FILES"}], [{"text": "RUN"}]], "resize_keyboard": True}
-        send_message(chat_id, "✅ <b>HTML HOSTING SELECTED</b>\n\n📂 Multi-files (HTML/JS/Config) bhejna shuru karein.", kb)
+        send_message(chat_id, "✅ <b>HTML HOSTING SELECTED</b>\n\n📂 Multi-files (HTML/JS/Config) bhejna shuru karein.", upload_keyboard)
         return "OK", 200
 
-    if text == "HOSTING PYTHON":
+    if "HOSTING PYTHON" in text:
         firebase_set(f"Hostingbots_s/{chat_id}/state", "uploading_python")
         firebase_set(f"Hostingbots_s/{chat_id}/hosting_type", "PYTHON")
         firebase_set(f"Hostingbots_s/{chat_id}/temp_files", {})
-        kb = {"keyboard": [[{"text": "SUBMIT FILES"}], [{"text": "RUN"}]], "resize_keyboard": True}
-        send_message(chat_id, "🐍 <b>PYTHON HOSTING SELECTED</b>\n\n📂 Apni Python (.py) aur config files bhein.", kb)
+        send_message(chat_id, "🐍 <b>PYTHON HOSTING SELECTED</b>\n\n📂 Apni Python (.py) aur config files bhein.", upload_keyboard)
         return "OK", 200
 
-    if text == "TOTAL LIST":
+    if "TOTAL LIST" in text:
         user_sites = firebase_get("Hostingbots_s/meta_domains") or {}
         found = False
         _, render_domain = get_settings()
@@ -237,13 +256,13 @@ def telegram_webhook():
         send_message(chat_id, f"⚡ Received: <b>{f_name}</b>\nAur files bhein ya 'SUBMIT FILES' par click karein.")
         return "OK", 200
 
-    if text == "SUBMIT FILES" and user_state in ["uploading_html", "uploading_python"]:
+    if "SUBMIT FILES" in text and user_state in ["uploading_html", "uploading_python"]:
         temp_files = firebase_get(f"Hostingbots_s/{chat_id}/temp_files")
         if not temp_files:
             send_message(chat_id, "⚠️ Files missing! Please upload files.")
             return "OK", 200
         firebase_set(f"Hostingbots_s/{chat_id}/state", "awaiting_domain")
-        send_message(chat_id, "📂 Files mapped!\n\n🌐 Ab apna Unique <b>DOMAIN NAME</b> bhejiye:")
+        send_message(chat_id, "📂 Files mapped!\n\n🌐 Ab apna Unique <b>DOMAIN NAME</b> bhejiye:", run_keyboard)
         return "OK", 200
 
     if user_state == "awaiting_domain" and text:
@@ -259,7 +278,7 @@ def telegram_webhook():
         send_message(chat_id, f"🎉 <b>HOSTING SUCCESSFUL!</b>\n\n🔗 <b>URL:</b> {render_domain}/site/{domain_name}", main_keyboard)
         return "OK", 200
 
-    # Dynamic Editing Block: FIXED MULTI-FILE MAP OVERWRITE
+    # Dynamic Editing Block
     if user_state.startswith("managing_") and text:
         domain = user_state.replace("managing_", "")
         
@@ -284,15 +303,13 @@ def telegram_webhook():
             send_message(chat_id, f"📝 <b>PASTE CODE NOW</b>\nYa phir <code>{f_to_add}</code> file upload karein.")
             return "OK", 200
 
-    # Real-time Multi-Append Workflow Fix
+    # Real-time Multi-Append Workflow
     if user_state.startswith("adding_file|"):
         _, domain, target_file = user_state.split("|")
         content = download_tg_file(document.get("file_id")) if document else text
         
-        # Micro-response processing message
         send_message(chat_id, "⏳ <i>Uploading file structure... Please wait...</i>")
         
-        # Save file directly inside structural map tree to preserve previous array lists
         firebase_set(f"Hostingbots_s/hosted_sites/{domain}/files/{target_file.replace('.', '_')}", content)
         firebase_set(f"Hostingbots_s/{chat_id}/state", f"managing_{domain}")
         
