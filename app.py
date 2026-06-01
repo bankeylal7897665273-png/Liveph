@@ -10,7 +10,7 @@ app = Flask(__name__)
 FIREBASE_DB_URL = "https://earning-a9b0c-default-rtdb.firebaseio.com"
 
 # ==========================================
-# FIREBASE UTILITIES
+# OPTIMIZED FIREBASE UTILITIES
 # ==========================================
 def firebase_get(path):
     r = requests.get(f"{FIREBASE_DB_URL}/{path}.json")
@@ -25,7 +25,7 @@ def firebase_delete(path):
 def get_settings():
     settings = firebase_get("settings")
     if settings:
-        return settings.get("bot_token"), settings.get("vercel_domain", "") # Vercel domain ki jagah yahan Render ka URL set hoga admin se
+        return settings.get("bot_token"), settings.get("vercel_domain", "")
     return None, ""
 
 # ==========================================
@@ -49,7 +49,7 @@ def download_tg_file(file_id):
         return requests.get(f"https://api.telegram.org/file/bot{token}/{file_path}").text
     return ""
 
-# Main Keyboards
+# Keyboards Configuration
 main_keyboard = {
     "keyboard": [
         [{"text": "HOSTING HTML"}, {"text": "HOSTING PYTHON"}],
@@ -58,8 +58,9 @@ main_keyboard = {
     "resize_keyboard": True
 }
 
-start_keyboard = {
-    "keyboard": [[{"text": "START"}]],
+# START ki jagah RUN Keyboard banaya hai fix karne ke liye
+run_keyboard = {
+    "keyboard": [[{"text": "RUN"}]],
     "resize_keyboard": True
 }
 
@@ -90,7 +91,6 @@ def serve_user_site(domain_name, filename):
         try:
             exec(file_content, {'__name__': '__main__'})
             output = redirected_output.getvalue()
-            # Save logs to Firebase so LOGOS button can read it
             firebase_set(f"Hostingbots_s/hosted_sites/{domain_name}/logs", output)
         except Exception as e:
             output = f"❌ Error:\n{str(e)}"
@@ -115,7 +115,7 @@ def telegram_webhook():
     message = update.get("message", {})
     callback_query = update.get("callback_query", {})
 
-    # Handle Inline Callbacks (EDIT / LOGOS)
+    # Handle Inline Buttons
     if callback_query:
         chat_id = callback_query["message"]["chat"]["id"]
         data = callback_query["data"]
@@ -133,7 +133,7 @@ def telegram_webhook():
             msg += f"<b>Files:</b>\n{file_list}\n\n"
             msg += "👉 <i>Delete:</i> <code>filename.ext/delete</code>\n"
             msg += "👉 <i>Add/Edit:</i> <code>filename/add</code> (Ya sidha file bhejein)"
-            send_message(chat_id, msg, start_keyboard)
+            send_message(chat_id, msg, run_keyboard)
 
         elif data.startswith("logs_"):
             domain = data.replace("logs_", "")
@@ -153,21 +153,27 @@ def telegram_webhook():
     user_state = firebase_get(f"Hostingbots_s/{chat_id}/state") or "idle"
     user_type = firebase_get(f"Hostingbots_s/{chat_id}/hosting_type") or "HTML"
 
-    # Start / Reset
-    if text in ["/start", "START", "Start"]:
+    # Command: /start (Sirf shuruat me poora bot load karega)
+    if text == "/start":
         firebase_set(f"Hostingbots_s/{chat_id}/state", "idle")
-        firebase_delete(f"Hostingbots_s/{chat_id}/temp_files") # Clear temp history
-        msg = "🌟 <b>WELCOME TO RENDER HOSTING BOT</b> 🌟\n\nKripya niche diye gaye keyboard se option select karein:"
+        firebase_delete(f"Hostingbots_s/{chat_id}/temp_files")
+        msg = "🌟 <b>WELCOME TO FAST B2K  HOSTING BOT</b> 🌟\n\nKripya niche diye gaye keyboard se option select karein:"
         send_message(chat_id, msg, main_keyboard)
         return "OK", 200
 
-    # Main Keyboard Actions
+    # Handle RUN button (User jab edit ke baad RUN dabayega toh bina reset hue update hoga)
+    if text in ["RUN", "Run", "run", "UPDATE", "CANCEL"]:
+        firebase_set(f"Hostingbots_s/{chat_id}/state", "idle")
+        send_message(chat_id, "✅ <b>Changes Saved & Live!</b>\nAapki file successfully update ho gayi hai.", main_keyboard)
+        return "OK", 200
+
+    # Main Options
     if text == "HOSTING HTML":
         firebase_set(f"Hostingbots_s/{chat_id}/state", "uploading_html")
         firebase_set(f"Hostingbots_s/{chat_id}/hosting_type", "HTML")
         firebase_set(f"Hostingbots_s/{chat_id}/temp_files", {})
         
-        kb = {"keyboard": [[{"text": "SUBMIT FILES"}], [{"text": "START"}]], "resize_keyboard": True}
+        kb = {"keyboard": [[{"text": "SUBMIT FILES"}], [{"text": "/start"}]], "resize_keyboard": True}
         send_message(chat_id, "✅ <b>HTML HOSTING SELECTED</b>\n\n📂 Apni HTML/JS/CSS files bhejna shuru karein.", kb)
         return "OK", 200
 
@@ -176,7 +182,7 @@ def telegram_webhook():
         firebase_set(f"Hostingbots_s/{chat_id}/hosting_type", "PYTHON")
         firebase_set(f"Hostingbots_s/{chat_id}/temp_files", {})
         
-        kb = {"keyboard": [[{"text": "SUBMIT FILES"}], [{"text": "START"}]], "resize_keyboard": True}
+        kb = {"keyboard": [[{"text": "SUBMIT FILES"}], [{"text": "/start"}]], "resize_keyboard": True}
         send_message(chat_id, "🐍 <b>PYTHON HOSTING SELECTED</b>\n\n📂 Apni Python (.py) files bhejna shuru karein.", kb)
         return "OK", 200
 
@@ -192,13 +198,11 @@ def telegram_webhook():
                 f_count = len(site_detail.get("files", {})) if site_detail else 0
                 s_type = meta.get("type", "HTML")
                 
-                # Box Format
                 msg = f"🌐 <b>URL:</b> {render_domain}/site/{dom}\n"
                 msg += f"📊 <b>Total File:</b> {f_count}\n"
                 msg += f"🗂 <b>Domain Name:</b> {dom}\n"
                 msg += f"⚙️ <b>Type:</b> {s_type}"
                 
-                # Dynamic Buttons
                 buttons = [[{"text": f"✏️ EDIT", "callback_data": f"edit_{dom}"}]]
                 if s_type == "PYTHON":
                     buttons[0].append({"text": "📜 LOGOS", "callback_data": f"logs_{dom}"})
@@ -210,13 +214,13 @@ def telegram_webhook():
             send_message(chat_id, "Abhi tak aapne koi file host nahi ki hai.", main_keyboard)
         return "OK", 200
 
-    # Uploading Process
+    # File Upload Process
     if user_state in ["uploading_html", "uploading_python"] and document:
         f_name = document.get("file_name", "")
         f_id = document.get("file_id", "")
         ext = f_name.split(".")[-1].lower() if "." in f_name else ""
 
-        # PHP REJECTION BLOCK EXACT MATCH
+        # PHP Rejection Block
         if ext == "php":
             send_message(chat_id, "PLEASE UPLOAD HTML AUR PYTHON FILES OK NO UPLOAD PHPS")
             return "OK", 200
@@ -230,7 +234,7 @@ def telegram_webhook():
     if text == "SUBMIT FILES" and user_state in ["uploading_html", "uploading_python"]:
         temp_files = firebase_get(f"Hostingbots_s/{chat_id}/temp_files")
         if not temp_files:
-            send_message(chat_id, "⚠️ Aapne koi file upload nahi ki. Phir se bhejein.")
+            send_message(chat_id, "⚠️ Aapne koi file upload nahi ki.")
             return "OK", 200
             
         firebase_set(f"Hostingbots_s/{chat_id}/state", "awaiting_domain")
@@ -250,7 +254,7 @@ def telegram_webhook():
         send_message(chat_id, f"🎉 <b>HOSTING SUCCESSFUL!</b>\n\n🔗 <b>URL:</b> {render_domain}/site/{domain_name}", main_keyboard)
         return "OK", 200
 
-    # Managing / Deleting / Adding files
+    # Edit / Delete Logic inside Domain
     if user_state.startswith("managing_") and text:
         domain = user_state.replace("managing_", "")
         
@@ -259,9 +263,8 @@ def telegram_webhook():
             if firebase_get(f"Hostingbots_s/hosted_sites/{domain}/files/{f_to_del}"):
                 firebase_delete(f"Hostingbots_s/hosted_sites/{domain}/files/{f_to_del}")
                 
-                # EXACT CUSTOM MESSAGE
-                msg = "Kya aap aur file delete ya add krna hi to comment dal ke file delete ya add karo ager kucch nahe krna to click start boton fir run"
-                send_message(chat_id, f"✅ File <b>{text.split('/')[0]}</b> deleted.\n\n" + msg, start_keyboard)
+                custom_msg = "Kya aap aur file delete ya add krna hi to comment dal ke file delete ya add karo ager kucch nahe krna to click RUN boton"
+                send_message(chat_id, f"✅ File <b>{text.split('/')[0]}</b> deleted.\n\n" + custom_msg, run_keyboard)
             else:
                 send_message(chat_id, "⚠️ File nahi mili.")
             return "OK", 200
@@ -284,14 +287,12 @@ def telegram_webhook():
         firebase_set(f"Hostingbots_s/hosted_sites/{domain}/files/{target_file.replace('.', '_')}", content)
         firebase_set(f"Hostingbots_s/{chat_id}/state", f"managing_{domain}")
         
-        # EXACT CUSTOM MESSAGE
-        msg = "Kya aap aur file delete ya add krna hi to comment dal ke file delete ya add karo ager kucch nahe krna to click start boton fir run"
-        send_message(chat_id, f"✅ File <b>{target_file}</b> updated!\n\n" + msg, start_keyboard)
+        custom_msg = "Kya aap aur file delete ya add krna hi to comment dal ke file delete ya add karo ager kucch nahe krna to click RUN boton"
+        send_message(chat_id, f"✅ File <b>{target_file}</b> updated!\n\n" + custom_msg, run_keyboard)
         return "OK", 200
 
     return "OK", 200
 
 if __name__ == '__main__':
-    # Render assigns the PORT automatically
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
